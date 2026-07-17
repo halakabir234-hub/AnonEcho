@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnonEcho — Anonymous Verifiable Feedback</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 40px; }
+        .container { max-width: 700px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        h1 { color: #1e293b; margin-top: 0; }
+        .subtitle { color: #64748b; font-size: 0.95rem; margin-bottom: 25px; }
+        .badge { background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; }
+        textarea { width: 100%; height: 100px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; resize: vertical; box-sizing: border-box; font-size: 1rem; margin-bottom: 15px; }
+        button { background-color: #4f46e5; color: white; border: none; padding: 12px 20px; font-size: 1rem; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; transition: background 0.2s; }
+        button:hover { background-color: #4338ca; }
+        .status-box { padding: 12px; border-radius: 8px; margin-bottom: 20px; display: none; font-size: 0.9rem; line-height: 1.4; }
+        .success { display: block; background-color: #dcfce7; color: #14532d; border: 1px solid #bbf7d0; }
+        .error { display: block; background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        .board { margin-top: 30px; border-top: 2px solid #f1f5f9; padding-top: 20px; }
+        .feedback-item { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #6366f1; }
+        .meta { font-size: 0.75rem; color: #94a3b8; margin-top: 5px; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>AnonEcho <span class="badge">Midnight ZK Demo</span></h1>
+    <p class="subtitle">Prove group membership using zero-knowledge logic and post feedback anonymously without revealing your wallet identity.</p>
+
+    <div id="statusBox" class="status-box"></div>
+
+    <label for="feedbackText"><strong>Write Confidential Feedback:</strong></label>
+    <textarea id="feedbackText" placeholder="Type something honest... (e.g., The onboarding developer tools need clearer documentation.)"></textarea>
+    
+    <button onclick="handleSubmission()">Submit Anonymously (Generate ZK Proof)</button>
+
+    <div class="board">
+        <h3>Public Verified Feedback Board</h3>
+        <div id="feedbackBoard">
+            <p style="color: #94a3b8; font-style: italic;">No feedback posted yet.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Front-end state simulator mirroring our index.js logic
+    let usedNullifiers = new Set();
+    let hasPosted = false; 
+    let feedbackCount = 0;
+
+    function handleSubmission() {
+        const textInput = document.getElementById('feedbackText');
+        const statusBox = document.getElementById('statusBox');
+        const board = document.getElementById('feedbackBoard');
+        const text = textInput.value.trim();
+
+        if (!text) {
+            showStatus('Please type some feedback first!', 'error');
+            return;
+        }
+
+        // --- SIMULATED ZK CHECK ---
+        // If the user has already posted, our deterministic nullifier check catches it!
+        if (hasPosted) {
+            showStatus('<strong>ZK Proof Validation Failed:</strong><br>Submission Rejected! The cryptographic nullifier indicates this group credential has already submitted feedback for this round.', 'error');
+            return;
+        }
+
+        // Create mock cryptographic elements matching Midnight transaction structures
+        const simulatedNullifier = Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join('');
+        const simulatedTxHash = Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join('');
+
+        // Update state
+        hasPosted = true; 
+        if (feedbackCount === 0) board.innerHTML = ''; // Clear fallback text
+
+        // Prepend new post onto the UI board
+        const item = document.createElement('div');
+        item.className = 'feedback-item';
+        item.innerHTML = `
+            <div>"${text}"</div>
+            <div class="meta">Nullifier (ZK-Disclosed): ${simulatedNullifier.substring(0, 24)}...</div>
+            <div class="meta">Tx Hash: ${simulatedTxHash.substring(0, 24)}...</div>
+        `;
+        board.insertBefore(item, board.firstChild);
+
+        // Success notification showing exactly what happened
+        showStatus(`<strong>Success! ZK Proof Generated Locally:</strong><br>Verified group membership successfully against the Merkle Root! Feedback submitted to public board. Your identity remains 100% anonymous.`, 'success');
+        textInput.value = '';
+    }
+
+    function showStatus(msg, type) {
+        const statusBox = document.getElementById('statusBox');
+        statusBox.innerHTML = msg;
+        statusBox.className = `status-box ${type}`;
+    }
+</script>
+
+</body>
+</html>

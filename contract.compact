@@ -1,0 +1,132 @@
+// ============================================================================
+// AnonEcho — Anonymous, Verifiable Feedback Contract
+// Midnight Hackathon submission
+//
+// Goal: let a member of a known credential group submit a piece of text
+// feedback such that:
+//   1. Anyone can verify the submitter held a valid group credential.
+//   2. Nobody (including the contract/chain) learns WHICH credential it was.
+//   3. The same credential cannot flood the board (one submission per
+//      credential per feedback "round"), without that check revealing
+//      identity — enforced via a nullifier.
+//
+// NOTE: Compact is a fast-evolving pre-mainnet language. Standard-library
+// call names below (persistentHash, MerkleTree, disclose, Set, Counter,
+// Map) reflect the shape of the Midnight Compact stdlib at time of writing.
+// Double check exact signatures against the `compactc` version you target
+// before a non-hackathon deployment.
+// ============================================================================
+
+pragma language_version 0.13;
+
+import CompactStandardLibrary;
+
+// Depth of the membership Merkle tree. 16 levels => up to 65,536 members,
+// plenty for a hackathon demo while keeping proving time low.
+const MEMBER_TREE_DEPTH = 16;
+
+// ----------------------------------------------------------------------------
+// Public ledger state (visible on-chain to everyone)
+// ----------------------------------------------------------------------------
+
+// Root of the Merkle tree whose leaves are member credential commitments.
+// Set by whoever runs the registrar circuit (e.g. a DAO multisig or admin
+// key, out of scope for this hackathon build — see registerMember below).
+export ledger membershipRoot: Bytes<32>;
+
+// The Merkle tree itself, so the registrar can append new members and
+// recompute the root on-chain.
+export ledger memberTree: MerkleTree<MEMBER_TREE_DEPTH, Bytes<32>>;
+
+// Nullifiers already used to submit feedback. Prevents the same credential
+// from submitting more than once, without ever linking back to *which*
+// credential it was.
+export ledger usedNullifiers: Set<Bytes<32>>;
+
+// Running count of feedback entries, used as the map key / ordering index.
+export ledger feedbackCount: Counter;
+
+// The actual anonymous feedback text, keyed by submission index. Opaque
+// strings are stored as plain public data — this is the one piece of
+// information we *want* fully public.
+export ledger feedbacks: Map<Uint<64>, Opaque<"string">>;
+
+// ----------------------------------------------------------------------------
+// Witnesses (private inputs, supplied off-chain by the user's wallet /
+// prover — never written to the ledger unless explicitly disclose()'d)
+// ----------------------------------------------------------------------------
+
+// The user's group-credential secret. Knowledge of this is what "being a
+// verified member" means. It must never appear in cleartext on-chain.
+witness credentialSecretKey(): Bytes<32>;
+
+// Merkle inclusion proof showing commitment(credentialSecretKey) is a leaf
+// of memberTree, without revealing the leaf index.
+witness credentialMerklePath(): MerkleTreePath<MEMBER_TREE_DEPTH, Bytes<32>>;
+
+// The feedback text the user wants to publish. Private input purely so the
+// circuit controls exactly when/how it becomes public (via disclose()).
+witness feedbackText(): Opaque<"string">;
+
+// ----------------------------------------------------------------------------
+// Registrar circuit — adds a new member commitment to the tree.
+//
+// Hackathon simplification: anyone can call this. In production, gate it
+// behind an admin signature check / separate governance contract so only
+// approved credentials get committed.
+// ----------------------------------------------------------------------------
+export circuit registerMember(memberCommitment: Bytes<32>): [] {
+  memberTree = memberTree.insert(memberCommitment);
+  membershipRoot = memberTree.root();
+}
+
+// ----------------------------------------------------------------------------
+// Main circuit — prove membership + publish feedback anonymously.
+// ----------------------------------------------------------------------------
+export circuit submitFeedback(): [] {
+  const secretKey = credentialSecretKey();
+  const path = credentialMerklePath();
+
+  // Commitment = hash(secretKey). This is what was registered as a leaf,
+  // so recomputing it here binds the proof to this specific credential
+  // without ever revealing the credential itself.
+  const commitment = persistentHash<Bytes<32>>(secretKey);
+
+  // The path must actually authenticate `commitment` as a leaf...
+  assert(path.leaf == commitment, "credential does not match supplied Merkle path");
+
+  // ...and that leaf must be part of the currently published membership root.
+  assert(path.root() == membershipRoot, "credential is not a verified group member");
+
+  // Derive a per-context nullifier: hash(secretKey || domain tag). Same
+  // credential always produces the same nullifier, so reuse is detectable,
+  // but the nullifier itself is a one-way function of the secret and
+  // reveals nothing about which member it belongs to.
+  const nullifier = persistentHash<[Bytes<32>, Bytes<32>]>(
+    [secretKey, pad(32, "ANONECHO_FEEDBACK_V1")]
+  );
+
+  assert(!usedNullifiers.member(disclose(nullifier)), "this credential has already submitted feedback");
+
+  // Only the nullifier is disclosed — never the secret key or Merkle path.
+  usedNullifiers.insert(disclose(nullifier));
+
+  // The feedback text is exactly what we *want* public, so disclose it
+  // explicitly and store it at the next index.
+  const index = feedbackCount.value();
+  feedbacks.insert(disclose(index), disclose(feedbackText()));
+  feedbackCount.increment(1);
+}
+
+// ----------------------------------------------------------------------------
+// Read-only helper circuit for UIs: has this credential already posted?
+// Lets a client check locally (using its own secret key witness) before
+// spending proving time on a submission that would fail the assert above.
+// ----------------------------------------------------------------------------
+export circuit hasSubmitted(): Boolean {
+  const secretKey = credentialSecretKey();
+  const nullifier = persistentHash<[Bytes<32>, Bytes<32>]>(
+    [secretKey, pad(32, "ANONECHO_FEEDBACK_V1")]
+  );
+  return usedNullifiers.member(disclose(nullifier));
+}
