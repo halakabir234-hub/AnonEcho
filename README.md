@@ -6,6 +6,7 @@ Welcome to **AnonEcho**! This is my official submission for the [Midnight Hackat
 
 AnonEcho is a private, verifiable feedback microservice built to give users absolute anonymity while guaranteeing to an organization that every piece of feedback comes from an actual, authenticated member.
 
+
 ## 💡 The Inspiration
 In workplaces, DAOs, and online communities, people want to give honest, critical feedback without fear of retaliation. Traditional "anonymous" forms can track you via IP addresses or database IDs. On standard blockchains, your public wallet address leaks your entire financial identity. I built AnonEcho to solve this by bringing zero-knowledge logic to everyday communication.
 
